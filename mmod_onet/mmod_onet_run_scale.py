@@ -138,25 +138,30 @@ def run_onet(filename, rectangle, Onet, display_result=True):
     y = y[0]
 
     ## return and/or display landmarks
-    output = []
+    landmarks = []
     cv2.rectangle(img, (int(y[0]), int(y[1])), (int(y[2]), int(y[3])), (0, 0, 255), int(2./200*min(origin_h,origin_w)))
     for i in range(5, 15, 2):
         cv2.circle(img, (int(y[i + 0]), int(y[i + 1])), int(2./200*min(origin_h,origin_w)), (0, 0, 255), -1)
-        output.append(int(y[i+0]))
-        output.append(int(y[i+1]))
+        landmarks.append(int(y[i+0]))
+        landmarks.append(int(y[i+1]))
     
     if display_result:
         print("==== showing Onet's detection ====")
         fig = plt.figure()
         plt.imshow(img[...,::-1])
-        plt.show()
-    return output
+        plt.savefig(get_name("onet", filename))
+        plt.close()
+
+    box = (int(y[0]), int(y[1]), int(y[2]), int(y[3]))
+    return box , landmarks
 
 def display(img, dets, name=""):
+
     """
     show mmod's detection result, bounding boxes are red except for the max score one, whose color is blue and who will be the input to Onet.
     """
     img = np.squeeze(img)
+    plt.ioff()
     fig = plt.figure(figsize=(5,5))
     ax = fig.add_subplot(111)
     ax.imshow(img)
@@ -166,7 +171,8 @@ def display(img, dets, name=""):
         else:
             rect = patches.Rectangle((box[1], box[0]), box[2], box[3], linewidth=2,edgecolor='b', fill=False)
         ax.add_patch(rect)
-    plt.show()
+    plt.savefig(name)
+    plt.close()
 
 ## call this function to do detection
 def face_detection(filename, pyramid_down, display_mmod_result=False,display_mtcnn_result=False):
@@ -180,30 +186,70 @@ def face_detection(filename, pyramid_down, display_mmod_result=False,display_mtc
                         scale=scale
                         )
         dets_total.extend(dets)
-        
+    dets_total.sort(key=itemgetter(4))
     if display_mmod_result and len(dets_total) > 0:
         print("==== showing mmod's detection ====")
-        display(np.array(np.array(Image.open(filename))), dets_total, name="")
+        display(np.array(np.array(Image.open(filename))), dets_total, name=get_name("mmod", filename))
     
     dets_total.sort(key=itemgetter(4))
 
+
+
     ## do MTCNN [Onet] detection
     if len(dets_total) > 0:
-        rectangle = dets_total[-1]
-        return run_onet(filename, rectangle, Onet, display_result=display_mtcnn_result)
-    return []
+        mmod_best = dets_total[-1]
+        box, landmarks = run_onet(filename, mmod_best, Onet, display_result=display_mtcnn_result)
+        return mmod_best, (box, landmarks)
+    return None, None
 
 
 # In[4]:
-
-filename = 'b.png'
-pyramid_down = (200, 6/7., 10)
-face_detection(filename,
-               pyramid_down,
-               display_mmod_result=True,
-               display_mtcnn_result=True)
+import shutil
+folder = "./transformed/"
+if os.path.exists(folder):
+    shutil.rmtree(folder)
+os.makedirs(folder)
 
 
+def get_name(model, filename):
+    #index = 0
+    #for i, char in reversed(list(enumerate(filename))):
+    #    if char == '/':
+    #        index = i
+    #        break
+    folder_ = folder + model + "/"
+    if not os.path.exists(folder_):
+        os.makedirs(folder_)
+    return folder_ + filename.replace('/', '_')
+
+
+paths_file = open("paths", "r")
+image_num = 0
+mmod_num = 0
+onet_num = 0
+reses = []
+for path in paths_file:
+    image_num += 1
+    pyramid_down = (200, 6/7., 10)
+    # mmod_res format: upper_left_y, upper_left_x, width, height, score
+    # onet_res format: box, landmarsk
+    # box: upper_left_x, upper_left_y, bot_right_x, bot_right_y; landmark:z shape from top to bottom, point in x, y
+    mmod_res, onet_res = face_detection(path[:-1],
+                   pyramid_down,
+                   display_mmod_result=True,
+                   display_mtcnn_result=True)
+    reses.append((mmod_res, onet_res))
+    if mmod_res is not None:
+        mmod_num += 1
+    if onet_res is not None:
+        onet_num += 1
+
+print('face number:' + str(image_num))
+
+res_file = open(folder + 'mmod_onet_result.txt', 'w')
+for res in reses:
+    res_file.write(str(res) + '\n')
+res_file.close()
 
 # pyramid_down = (200, 6/7., 10)
 # src = './images_shuffle(20,60)/'
